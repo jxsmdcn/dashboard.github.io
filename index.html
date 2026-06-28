@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>筱黑 | Secure Entry</title>
+    <style>
+        body { margin: 0; height: 100vh; display: flex; justify-content: center; align-items: center; background: #050505; font-family: system-ui; color: white; }
+        .card { padding: 40px; border-radius: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); text-align: center; }
+        input { width: 250px; padding: 12px; margin-top: 20px; border: 1px solid #333; border-radius: 8px; background: #111; color: white; text-align: center; }
+        button { width: 100%; margin-top: 15px; padding: 12px; border: none; border-radius: 8px; background: white; color: black; cursor: pointer; font-weight: bold; }
+        p { color: #666; font-size: 12px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>身份验证</h2>
+        <p>请输入您的网名以进入空间</p>
+        <form id="form">
+            <input id="nick" type="text" placeholder="Enter Nickname" required>
+            <button type="submit">进 入</button>
+        </form>
+        <p>© 2026 筱黑工作室</p>
+    </div>
+
+    <script>
+        document.getElementById('form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const nick = document.getElementById('nick').value.trim();
+            // 将状态存入 SessionStorage，以便在下一个页面读取
+            sessionStorage.setItem('userNick', nick);
+            // 无论输什么，都跳转到同一个页面
+            window.location.href = 'dashboard.html';
+        });
+    </script>
+</body>
+</html>
