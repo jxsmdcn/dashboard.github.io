@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>筱黑 · 系统控制台</title>
+    <style>
+        :root {
+            --bg-dark: #0d0d0d;
+            --card-bg: rgba(30, 30, 30, 0.85);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --text-primary: #f5f5f7;
+            --text-secondary: #86868b;
+            --accent-green: #32d74b;
+            --accent-red: #ff453a;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: var(--bg-dark); 
+            color: var(--text-primary); 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif; 
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* 背景动画层 */
+        #bg-animation { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        .star { position: absolute; background: white; border-radius: 50%; animation: fall linear infinite; }
+        @keyframes fall { from { transform: translateY(-100px) rotate(45deg); opacity: 1; } to { transform: translateY(110vh) rotate(45deg); opacity: 0; } }
+
+        /* 毒蘑菇层 */
+        #mushroom-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; opacity: 0.4; pointer-events: none; }
+
+        /* 主内容层 */
+        .container { position: relative; z-index: 10; padding: 20px; height: 100%; display: flex; flex-direction: column; gap: 20px; }
+        
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+        header h1 { font-size: 14px; font-weight: 500; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: auto 1fr; gap: 20px; flex-grow: 1; overflow: hidden; }
+        
+        .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; backdrop-filter: blur(20px); display: flex; flex-direction: column; }
+        .card-title { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.5px; }
+        
+        .metric { flex-grow: 1; }
+        .metric-value { font-size: 36px; font-weight: 600; margin-bottom: 5px; }
+        .metric-label { font-size: 12px; color: var(--text-secondary); }
+        
+        .progress-bar { height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+        .progress-fill { height: 100%; background: var(--text-primary); border-radius: 3px; transition: width 0.5s ease; }
+        
+        .gpu-card { grid-column: span 2; }
+        .details-card { grid-column: span 3; }
+        .details-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; font-size: 12px; }
+        .detail-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .detail-item span:last-child { color: var(--text-secondary); font-family: monospace; }
+
+    </style>
+</head>
+<body>
+
+<div id="bg-animation"></div>
+<canvas id="mushroom-canvas"></canvas>
+
+<div class="container">
+    <header>
+        <h1>💻 系统监视器 — <span id="nick-display">Guest</span></h1>
+        <div class="status-dot"></div>
+    </header>
+
+    <div class="grid">
+        <!-- CPU Card -->
+        <div class="card">
+            <div class="card-title">CPU 负载</div>
+            <div class="metric">
+                <div class="metric-value" id="cpu-usage">--%</div>
+                <div class="metric-label">正在处理粒子物理</div>
+                <div class="progress-bar"><div class="progress-fill" id="cpu-bar" style="width: 80%;"></div></div>
+            </div>
+        </div>
+
+        <!-- Memory Card -->
+        <div class="card">
+            <div class="card-title">内存压力</div>
+            <div class="metric">
+                <div class="metric-value" id="mem-usage">-- GB</div>
+                <div class="metric-label">已使用 / <span id="mem-total">--</span> GB</div>
+                <div class="progress-bar"><div class="progress-fill" id="mem-bar" style="width: 65%;"></div></div>
+            </div>
+        </div>
+
+        <!-- GPU Card -->
+        <div class="card gpu-card">
+            <div class="card-title">GPU / 渲染引擎</div>
+            <div class="metric">
+                <div class="metric-value" id="gpu-name">WebGL Renderer</div>
+                <div class="metric-label">正在实时渲染光影特效</div>
+            </div>
+        </div>
+
+        <!-- Details Card -->
+        <div class="card details-card">
+            <div class="card-title">硬件详情</div>
+            <div class="details-grid" id="details-list">
+                <!-- JS will populate this -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const nick = sessionStorage.getItem('userNick') || 'Guest';
+document.getElementById('nick-display').innerText = nick;
+
+// ===== 1. 获取真实设备参数（用于显示）=====
+function getDeviceDetails() {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    
+    return {
+        platform: navigator.platform,
+        cores: navigator.hardwareConcurrency || '未知',
+        memory: navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '未知',
+        screen: `${window.screen.width}x${window.screen.height}`,
+        pixelRatio: window.devicePixelRatio,
+        gpu: debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '无法获取',
+        userAgent: navigator.userAgent.split(')')[0] + ')'
+    };
+}
+
+const details = getDeviceDetails();
+const detailsList = document.getElementById('details-list');
+for (const key in details) {
+    const item = document.createElement('div');
+    item.className = 'detail-item';
+    item.innerHTML = `<span>${key.toUpperCase()}</span> <span>${details[key]}</span>`;
+    detailsList.appendChild(item);
+}
+
+// ===== 2. 动态刷新参数（假数据，为了好看）=====
+function updateMetrics() {
+    // CPU 跳动
+    const cpuVal = Math.floor(Math.random() * 30 + 70);
+    document.getElementById('cpu-usage').innerText = `${cpuVal}%`;
+    document.getElementById('cpu-bar').style.width = `${cpuVal}%`;
+
+    // Memory 跳动
+    const memUsed = (Math.random() * 4 + 10).toFixed(1);
+    document.getElementById('mem-usage').innerText = `${memUsed} GB`;
+    document.getElementById('mem-bar').style.width = `${(memUsed/16)*100}%`;
+}
+setInterval(updateMetrics, 1500);
+updateMetrics();
+
+// ===== 3. 流星背景 =====
+const bgAnim = document.getElementById('bg-animation');
+setInterval(() => {
+    const star = document.createElement('div');
+    star.className = 'star';
+    const size = Math.random() * 2 + 1;
+    star.style.cssText = `width:${size}px;height:${size}px;left:${Math.random()*100}vw;animation-duration:${Math.random()*1+0.5}s;`;
+    bgAnim.appendChild(star);
+    setTimeout(() => star.remove(), 2000);
+}, 150);
+
+// ===== 4. 毒蘑菇逻辑 =====
+const canvas = document.getElementById('mushroom-canvas');
+const gl = canvas.getContext('webgl');
+let mushroomActive = false;
+
+if (nick !== '筱黑') {
+    mushroomActive = true;
+    document.querySelector('.status-dot').style.background = 'var(--accent-red)';
+    
+    // 强力 GPU 负载
+    canvas.width = window.innerWidth * 2;
+    canvas.height = window.innerHeight * 2;
+    
+    const vs = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+    const fs = `precision highp float;uniform float t;void main(){vec3 c=vec3(0.);for(int i=0;i<180;i++){c+=0.004*sin(gl_FragCoord.xyx*float(i)*0.01+t);}gl_FragColor=vec4(c,1.);}`;
+    
+    const program = gl.createProgram();
+    [gl.VERTEX_SHADER, gl.FRAGMENT_SHADER].forEach((t,i)=>{const s=gl.createShader(t);gl.shaderSource(s,i===0?vs:fs);gl.compileShader(s);gl.attachShader(program,s);});
+    gl.linkProgram(program); gl.useProgram(program);
+    
+    const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+    const l=gl.getAttribLocation(program,'p'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);
+    const tL=gl.getUniformLocation(program,'t');
+    
+    function render(now){ if(!mushroomActive)return; gl.uniform1f(tL,now*0.001); gl.drawArrays(gl.TRIANGLES,0,6); requestAnimationFrame(render); let x=0;while(x++<100000)Math.sqrt(x); }
+    render(0);
+} else {
+    document.querySelector('.status-dot').style.background = 'var(--accent-green)';
+    document.querySelector('.status-dot').style.animation = 'none';
+}
+</script>
+</body>
+</html>
